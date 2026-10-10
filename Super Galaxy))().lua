@@ -9163,6 +9163,12 @@ NicoHacksGroup:AddToggle("HitBox", {
 			end
 		end
 	end,
+}):AddKeyPicker("HitBoxKey", {
+	Default = "None",
+	SyncToggleState = true,
+	Mode = "Toggle",
+	Text = "Hitbox",
+	NoUI = false,
 })
 
 NicoHacksGroup:AddSlider("HitBoxSize", {
@@ -10146,7 +10152,6 @@ task.spawn(function()
 		HighFPS = 240,
 		LowFPS = 60,
 		IsLowFPS = false,
-		LastFrameTime = os.clock(),
 		ShowPhysicalButton = false,
 	}
 
@@ -10221,6 +10226,7 @@ task.spawn(function()
 	Groupboxes.Gadgets.OtherGadgets:AddToggle("FPSPhysicalButtonToggle", {
 		Text = "Show Physical FPS Button",
 		Default = false,
+		Tooltip = "For mobile persons",
 		Callback = function(Value)
 			FPSSettings.ShowPhysicalButton = Value
 			FPSPhysicalButton.Visible = Value
