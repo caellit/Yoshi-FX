@@ -579,6 +579,7 @@ TextureSettings = {
 	OriginalMaterials = {},
 	PerPartColors = {},
 	UsePerPartColors = false,
+	KeepColors = false,
 	DefaultColor = Color3.fromRGB(163, 162, 165),
 }
 
@@ -1628,7 +1629,7 @@ function isTextObject(obj)
 end
 
 function HasFontObject(obj)
-	return obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")
+	return obj:IsA("TextLabel")
 end
 
 function escapePattern(s)
@@ -2633,10 +2634,10 @@ function StartPcEsp()
 				highlight.OutlineColor = Settings.EspSettings.PcEsp.OutlineColor
 				highlight.OutlineTransparency = Settings.EspSettings.PcEsp.OutlineTransparency
 				highlight.FillTransparency = Settings.EspSettings.PcEsp.FillTransparency
-				highlight.FillColor = screen.BrickColor.Color
+				highlight.FillColor = Settings.EspSettings.PcEsp.FillColor
 				highlight.Parent = v
 				PlayerConnections.PcEsp[v] = screen:GetPropertyChangedSignal("BrickColor"):Connect(function()
-					highlight.FillColor = screen.BrickColor.Color
+					highlight.FillColor = Settings.EspSettings.PcEsp.FillColor
 				end)
 			end
 		end
@@ -2804,6 +2805,7 @@ function UpdatePcEspColors()
 			highlight.OutlineColor = Settings.EspSettings.PcEsp.OutlineColor
 			highlight.OutlineTransparency = Settings.EspSettings.PcEsp.OutlineTransparency
 			highlight.FillTransparency = Settings.EspSettings.PcEsp.FillTransparency
+			highlight.FillColor = Settings.EspSettings.PcEsp.FillColor
 		end
 	end
 end
@@ -6131,37 +6133,60 @@ function DisableBarrierVisibility()
 end
 
 function EnableNoFog()
-	if not FogSettings.LightingFolder then
-		FogSettings.LightingFolder = Instance.new("Folder")
-		FogSettings.LightingFolder.Name = "StoredLightingElements"
-		FogSettings.LightingFolder.Parent = ReplicatedStorage
-	end
-
-	for _, element in ipairs(game.Lighting:GetChildren()) do
-		if
-			element:IsA("Atmosphere")
-			or element:IsA("BloomEffect")
-			or element:IsA("BlurEffect")
-			or element:IsA("ColorCorrectionEffect")
-			or element:IsA("DepthOfFieldEffect")
-			or element:IsA("SunRaysEffect")
-		then
-			element.Parent = FogSettings.LightingFolder
+	local lighting = game:GetService("Lighting")
+	local atmosphere = lighting:FindFirstChildOfClass("Atmosphere")
+	if atmosphere then
+		if not FogSettings.OriginalAtmosphere then
+			FogSettings.OriginalAtmosphere = {
+				Instance = atmosphere,
+				Color = atmosphere.Color,
+				Glare = atmosphere.Glare,
+				Haze = atmosphere.Haze,
+				Decay = atmosphere.Decay,
+				Density = atmosphere.Density,
+				Offset = atmosphere.Offset,
+			}
 		end
+		atmosphere.Color = Color3.fromRGB(0, 0, 0)
+		atmosphere.Glare = 0
+		atmosphere.Haze = 10
+		atmosphere.Decay = Color3.fromRGB(0, 0, 0)
+		atmosphere.Density = 0
+		atmosphere.Offset = 0
 	end
-
-	game.Lighting.FogEnd = 100000
-	game.Lighting.TimeOfDay = "21:00:00"
+	local sky = lighting:FindFirstChildOfClass("Sky")
+	if sky then
+		if not FogSettings.OriginalSky then
+			FogSettings.OriginalSky = {
+				Instance = sky,
+				MoonAngularSize = sky.MoonAngularSize,
+				StarCount = sky.StarCount,
+			}
+		end
+		sky.MoonAngularSize = 10
+		sky.StarCount = 0
+	end
 end
 
 function DisableNoFog()
-	if FogSettings.LightingFolder then
-		for _, element in ipairs(FogSettings.LightingFolder:GetChildren()) do
-			element.Parent = game.Lighting
-		end
+	local og = FogSettings.OriginalAtmosphere
+	if og and og.Instance and og.Instance.Parent then
+		local atmosphere = og.Instance
+		atmosphere.Color = og.Color
+		atmosphere.Glare = og.Glare
+		atmosphere.Haze = og.Haze
+		atmosphere.Decay = og.Decay
+		atmosphere.Density = og.Density
+		atmosphere.Offset = og.Offset
 	end
+	FogSettings.OriginalAtmosphere = nil
 
-	game.Lighting.TimeOfDay = "14:00:00"
+	local ogSky = FogSettings.OriginalSky
+	if ogSky and ogSky.Instance and ogSky.Instance.Parent then
+		ogSky.Instance.MoonAngularSize = ogSky.MoonAngularSize
+		ogSky.Instance.StarCount = ogSky.StarCount
+	end
+	FogSettings.OriginalSky = nil
 end
 
 function DisableBushes()
@@ -7247,14 +7272,13 @@ PcOutlinePicker = Groupboxes.EspCustomization.PcAndTube:AddLabel("Pc Outline"):A
 	end,
 })
 
-PcFillTransparancy = Groupboxes.EspCustomization.PcAndTube:AddInput("InputPicker", {
-	Text = "Pc fill transparancy",
-	Default = Settings.EspSettings.PcEsp.FillTransparency,
-	Numeric = true,
-	ClearTextOnFocus = false,
-	Finished = false,
+PcFillPicker = Groupboxes.EspCustomization.PcAndTube:AddLabel("Pc Fill"):AddColorPicker("PcFillPicker", {
+	Default = Settings.EspSettings.PcEsp.FillColor,
+	Title = "Adjust pc fill",
+	Transparency = Settings.EspSettings.PcEsp.FillTransparency,
 	Callback = function(value)
-		Settings.EspSettings.PcEsp.FillTransparency = value
+		Settings.EspSettings.PcEsp.FillColor = value
+		Settings.EspSettings.PcEsp.FillTransparency = Options.PcFillPicker.Transparency
 		UpdatePcEspColors()
 	end,
 })
@@ -8011,6 +8035,10 @@ NoFogToggle = Groupboxes.Visual.LeftGroupBox:AddToggle("NoFog", {
 	Callback = function(Value)
 		FogSettings.Enabled = Value
 		if Value then
+			local bf = Library.Toggles.BlackFog
+			if bf and bf.Value then
+				bf:SetValue(false)
+			end
 			EnableNoFog()
 		else
 			DisableNoFog()
@@ -8018,84 +8046,85 @@ NoFogToggle = Groupboxes.Visual.LeftGroupBox:AddToggle("NoFog", {
 	end,
 })
 
-ogfogend = Lighting.FogEnd
-ogfogcolor = Lighting.FogColor
-fogremoverenabled = false
-
-function cleanupblackfog()
-	local cache = workspace:FindFirstChild("Cache")
-
-	local blackfogsky = Lighting:FindFirstChild("blackfogsky")
-	local blackfognocolor = Lighting:FindFirstChild("blackfognocolor")
-	local blackfogbloom = Lighting:FindFirstChild("blackfogbloom")
-
-	if blackfogsky then
-		blackfogsky:Destroy()
-	end
-	if blackfognocolor then
-		blackfognocolor:Destroy()
-	end
-	if blackfogbloom then
-		blackfogbloom:Destroy()
-	end
-	local ogsky = cache:FindFirstChildOfClass("Sky")
-	if ogsky then
-		ogsky.Parent = Lighting
-	end
-	Lighting.FogColor = ogfogcolor
-	FogColor.FogEnd = ogfogend
-end
-
 function setupblackfog()
-	if not fogremoverenabled then
+	if Lighting:FindFirstChild("BlackFogConfig") then
 		return
 	end
-	local blackSky = Instance.new("Sky")
-	blackSky.SkyboxBk = "rbxassetid://0"
-	blackSky.SkyboxDn = "rbxassetid://0"
-	blackSky.SkyboxFt = "rbxassetid://0"
-	blackSky.SkyboxLf = "rbxassetid://0"
-	blackSky.SkyboxRt = "rbxassetid://0"
-	blackSky.SkyboxUp = "rbxassetid://0"
-	blackSky.Name = "blackfogsky"
-
-	local cache = workspace:FindFirstChild("Cache")
-	if not cache then
-		cache = Instance.new("Folder")
-		cache.Parent = workspace
-		cache.Name = "Cache"
+	local config = Instance.new("Folder")
+	config.Name = "BlackFogConfig"
+	config.Parent = Lighting
+	local atm = Lighting:FindFirstChildOfClass("Atmosphere")
+	if atm then
+		local origColor = Instance.new("Color3Value", config)
+		origColor.Name = "Color"
+		origColor.Value = atm.Color
+		local origGlare = Instance.new("NumberValue", config)
+		origGlare.Name = "Glare"
+		origGlare.Value = atm.Glare
+		local origHaze = Instance.new("NumberValue", config)
+		origHaze.Name = "Haze"
+		origHaze.Value = atm.Haze
+		local origDecay = Instance.new("Color3Value", config)
+		origDecay.Name = "Decay"
+		origDecay.Value = atm.Decay
+		local origDensity = Instance.new("NumberValue", config)
+		origDensity.Name = "Density"
+		origDensity.Value = atm.Density
+		local origOffset = Instance.new("NumberValue", config)
+		origOffset.Name = "Offset"
+		origOffset.Value = atm.Offset
 	end
+	task.spawn(function()
+		while Lighting:FindFirstChild("BlackFogConfig") do
+			local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+			if not atmosphere then
+				atmosphere = Instance.new("Atmosphere")
+				atmosphere.Parent = Lighting
+			end
+			if atmosphere.Density ~= 0.75 or atmosphere.Haze ~= 2.46 then
+				atmosphere.Color = Color3.fromRGB(0, 0, 0)
+				atmosphere.Glare = 0
+				atmosphere.Haze = 2.46
+				atmosphere.Decay = Color3.fromRGB(0, 0, 0)
+				atmosphere.Density = 0.75
+				atmosphere.Offset = 0
+			end
+			task.wait(1)
+		end
+	end)
+end
 
-	if Lighting:FindFirstChildOfClass("Sky") then
-		Lighting:FindFirstChildOfClass("Sky").Parent = cache
+function cleanupblackfog()
+	local config = Lighting:FindFirstChild("BlackFogConfig")
+	if not config then
+		return
 	end
-
-	blackSky.Parent = Lighting
-
-	Lighting.FogEnd = 0
-	Lighting.FogColor = Color3.new(0, 0, 0)
-
-	local colorCorrection = Instance.new("ColorCorrectionEffect")
-	colorCorrection.Brightness = 0.2
-	colorCorrection.Contrast = 0.3
-	colorCorrection.Saturation = 0.2
-	colorCorrection.Parent = Lighting
-	colorCorrection.Name = "blackfognocolor"
-
-	local bloom = Instance.new("BloomEffect")
-	bloom.Intensity = 1.5
-	bloom.Threshold = 2
-	bloom.Size = 24
-	bloom.Parent = Lighting
-	bloom.Name = "blackfogbloom"
+	local atm = Lighting:FindFirstChildOfClass("Atmosphere")
+	if atm then
+		local colorVal = config:FindFirstChild("Color")
+		if colorVal then
+			atm.Color = colorVal.Value
+			atm.Glare = config.Glare.Value
+			atm.Haze = config.Haze.Value
+			atm.Decay = config.Decay.Value
+			atm.Density = config.Density.Value
+			atm.Offset = config.Offset.Value
+		else
+			atm:Destroy()
+		end
+	end
+	config:Destroy()
 end
 
 Groupboxes.Visual.LeftGroupBox:AddToggle("BlackFog", {
 	Text = "Black fog",
 	Default = false,
-	callback = function(Value)
-		fogremoverenabled = Value
+	Callback = function(Value)
 		if Value then
+			local nf = Library.Toggles.NoFog
+			if nf and nf.Value then
+				nf:SetValue(false)
+			end
 			setupblackfog()
 		else
 			cleanupblackfog()
@@ -9163,12 +9192,6 @@ NicoHacksGroup:AddToggle("HitBox", {
 			end
 		end
 	end,
-}):AddKeyPicker("HitBoxKey", {
-	Default = "None",
-	SyncToggleState = true,
-	Mode = "Toggle",
-	Text = "Hitbox",
-	NoUI = false,
 })
 
 NicoHacksGroup:AddSlider("HitBoxSize", {
@@ -9273,11 +9296,8 @@ function StartFontChanger()
 		return
 	end
 
-	ApplyFontToContainer(workspace)
 	ApplyFontToContainer(playergui)
 
-	table.insert(FontSettings.Connections, workspace.DescendantAdded:Connect(ApplyFontToObject))
-	table.insert(FontSettings.Connections, CoreGui.DescendantAdded:Connect(ApplyFontToObject))
 	table.insert(FontSettings.Connections, playergui.DescendantAdded:Connect(ApplyFontToObject))
 end
 
@@ -9301,7 +9321,9 @@ function ApplyTextureToObject(obj)
 		end
 		obj.Material = TextureSettings.SelectedTexture
 
-		if TextureSettings.UsePerPartColors and TextureSettings.PerPartColors[obj] then
+		if TextureSettings.KeepColors then
+			obj.Color = TextureSettings.OriginalMaterials[obj].Color
+		elseif TextureSettings.UsePerPartColors and TextureSettings.PerPartColors[obj] then
 			obj.Color = TextureSettings.PerPartColors[obj]
 		elseif not TextureSettings.UsePerPartColors then
 			obj.Color = TextureSettings.DefaultColor
@@ -9376,8 +9398,6 @@ GeneralCustomizationLeft:AddDropdown("FontSelection", {
 		"DenkOne",
 		"Fondamento",
 		"FredokaOne",
-		"Gaegu",
-		"Grenze",
 		"GrenzeGotisch",
 		"Highway",
 		"IndieFlower",
@@ -9385,15 +9405,11 @@ GeneralCustomizationLeft:AddDropdown("FontSelection", {
 		"Jura",
 		"Kalam",
 		"Merriweather",
-		"Michroma",
 		"Nunito",
-		"Oswald",
 		"PatrickHand",
-		"PermanentMarker",
 		"Roboto",
 		"RobotoCondensed",
 		"RobotoMono",
-		"SciFi",
 		"SpecialElite",
 		"TitilliumWeb",
 		"Ubuntu",
@@ -9403,8 +9419,6 @@ GeneralCustomizationLeft:AddDropdown("FontSelection", {
 	Callback = function(Value)
 		FontSettings.SelectedFont = Enum.Font[Value]
 		if FontSettings.Enabled then
-			ApplyFontToContainer(workspace)
-			ApplyFontToContainer(CoreGui)
 			ApplyFontToContainer(playergui)
 		end
 	end,
@@ -9428,40 +9442,26 @@ GeneralCustomizationRight:AddToggle("EnableTextureChanger", {
 GeneralCustomizationRight:AddDropdown("TextureSelection", {
 	Values = {
 		"Plastic",
+		"NoEwwer",
 		"SmoothPlastic",
 		"Wood",
-		"WoodPlanks",
 		"Marble",
 		"Slate",
 		"Concrete",
-		"Granite",
 		"Brick",
 		"Pebble",
 		"Cobblestone",
 		"CorrodedMetal",
-		"DiamondPlate",
 		"Foil",
-		"Metal",
 		"Grass",
-		"LeafyGrass",
-		"Sand",
-		"Fabric",
 		"Ice",
 		"Glacier",
 		"Snow",
 		"Sandstone",
-		"Basalt",
-		"Ground",
-		"CrackedLava",
 		"Asphalt",
 		"Limestone",
-		"Pavement",
 		"Rock",
-		"Salt",
 		"Cardboard",
-		"Carpet",
-		"Glass",
-		"ForceField",
 		"Neon",
 		"Ceramic",
 		"Clay",
@@ -9470,7 +9470,13 @@ GeneralCustomizationRight:AddDropdown("TextureSelection", {
 	Default = "Plastic",
 	Text = "Select Texture",
 	Callback = function(Value)
-		TextureSettings.SelectedTexture = Enum.Material[Value]
+		if Value == "NoEwwer" then
+			TextureSettings.SelectedTexture = Enum.Material.SmoothPlastic
+			TextureSettings.KeepColors = true
+		else
+			TextureSettings.SelectedTexture = Enum.Material[Value]
+			TextureSettings.KeepColors = false
+		end
 		if TextureSettings.Enabled then
 			ApplyTextureToContainer(workspace)
 		end
@@ -10152,6 +10158,7 @@ task.spawn(function()
 		HighFPS = 240,
 		LowFPS = 60,
 		IsLowFPS = false,
+		LastFrameTime = os.clock(),
 		ShowPhysicalButton = false,
 	}
 
@@ -10226,7 +10233,6 @@ task.spawn(function()
 	Groupboxes.Gadgets.OtherGadgets:AddToggle("FPSPhysicalButtonToggle", {
 		Text = "Show Physical FPS Button",
 		Default = false,
-		Tooltip = "For mobile persons",
 		Callback = function(Value)
 			FPSSettings.ShowPhysicalButton = Value
 			FPSPhysicalButton.Visible = Value
